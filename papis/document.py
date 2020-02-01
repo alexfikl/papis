@@ -58,6 +58,15 @@ def keyconversion_to_data(
     return new_data
 
 
+def split_author_name(author: str) -> Dict[str, str]:
+    from bibtexparser.customization import splitname
+    parts = splitname(author)
+    given = " ".join(parts["first"])
+    family = " ".join(parts["von"] + parts["last"] + parts["jr"])
+
+    return dict(family=family, given=given)
+
+
 def author_list_to_author(data: Dict[str, Any]) -> str:
     author = ''
     separator = papis.config.get('multiple-authors-separator')

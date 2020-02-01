@@ -118,25 +118,18 @@ def bibtexparser_entry_to_papis(entry: Dict[str, str]) -> Dict[str, str]:
     :returns: Dictionary with keys of papis format.
 
     """
-    from bibtexparser.customization import splitname
-
-    def to_author_list(authors: str) -> List[Dict[str, str]]:
-        author_list = []
-        for author in re.split(r"\s+and\s+", authors):
-            parts = splitname(author)
-            given = " ".join(parts["first"])
-            family = " ".join(parts["von"] + parts["last"] + parts["jr"])
-
-            author_list.append(dict(family=family, given=given))
-
-        return author_list
 
     _k = papis.document.KeyConversionPair
     key_conversion = [
         _k("ID", [{"key": "ref", "action": None}]),
         _k("ENTRYTYPE", [{"key": "type", "action": None}]),
         _k("link", [{"key": "url", "action": None}]),
-        _k("author", [{"key": "author_list", "action": to_author_list}]),
+        _k("author", [{
+            "key": "author_list",
+            "action": lambda authors: [
+                papis.document.split_author_name(author)
+                for author in re.split(r"\s+and\s+", authors)
+                ]}]),
     ]
 
     result = papis.document.keyconversion_to_data(
