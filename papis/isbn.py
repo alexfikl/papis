@@ -1,4 +1,5 @@
 import papis.document
+import papis.importer
 import logging
 import isbnlib
 import isbnlib.registry
@@ -36,8 +37,46 @@ def data_to_papis(data: Dict[str, Any]) -> Dict[str, Any]:
     :returns: Dictionary with papis keynames
 
     """
+    _k = papis.document.KeyConversionPair
+    key_conversion = [
+            _k("authors", [{
+                "key": "author_list",
+                "action": lambda authors: [
+                    papis.document.split_author_name(author)
+                    for author in authors]}]),
+            _k("isbn-13", [
+                {"key": "isbn-13", "action": None},
+                {"key": "isbn", "action": None},
+                {"key": "ref", "action": None}]),
+    ]
+
     data = {k.lower(): data[k] for k in data}
-    return data
+    data['type'] = 'book'
+
+    return papis.document.keyconversion_to_data(
+            key_conversion, data, keep_unknown_keys=True)
+
+
+class Importer(papis.importer.Importer):
+    """Importer that retries ISBN data."""
+
+    def __init__(self, **kwargs: Any):
+        papis.importer.Importer.__init__(self, name="isbn", **kwargs)
+
+    @classmethod
+    def match(cls, uri: str) -> Optional[papis.importer.Importer]:
+        if isbnlib.notisbn(uri):
+            return None
+        return Importer(uri=uri)
+
+    @papis.importer.cache
+    def fetch(self: papis.importer.Importer) -> Any:
+        try:
+            data = get_data(self.uri)[0]
+        except isbnlib.dev._exceptions.NoDataForSelectorError:
+            pass
+        else:
+            self.ctx.data = data
 
 
 @click.command('isbn')
