@@ -58,6 +58,7 @@ general_settings = {
     "add-interactive": False,
     "add-edit": False,
     "add-open": False,
+    "add-move": False,
 
     "browse-key": 'url',
     "browse-query-format": "{doc[title]} {doc[author]}",
