@@ -189,6 +189,21 @@ class TestCli(tests.cli.TestCli):
         self.assertTrue(len(doc.get_files()) == 1)
         self.assertTrue(os.path.islink(doc.get_files()[0]))
 
+    def test_move(self):
+        pdf = create_random_pdf()
+        result = self.invoke([
+            '-s', 'author', 'Euclid',
+            '--set', 'title', 'Elements',
+            '-b',
+            '--move', pdf
+        ])
+        db = papis.database.get()
+        docs = db.query_dict(dict(author="Euclid"))
+        self.assertTrue(len(docs) == 1)
+        doc = docs[0]
+        self.assertTrue(len(doc.get_files()) == 1)
+        self.assertFalse(os.path.exists(pdf))
+
     @patch('papis.utils.open_file', lambda x: None)
     @patch('papis.tui.utils.confirm', lambda x: True)
     @patch(

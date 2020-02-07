@@ -259,7 +259,8 @@ def run(
         open_file: bool = False,
         edit: bool = False,
         git: bool = False,
-        link: bool = False
+        link: bool = False,
+        move: bool = False,
         ) -> None:
     """
     :param paths: Paths to the documents to be added
@@ -358,8 +359,8 @@ def run(
             os.symlink(in_file_abspath, tmp_end_filepath)
         else:
             logger.debug(
-                "[CP] '%s' to '%s'" %
-                (in_file_path, tmp_end_filepath))
+                "[%s] '%s' to '%s'" %
+                ("MV" if move else "CP", in_file_path, tmp_end_filepath))
             shutil.copy(in_file_path, tmp_end_filepath)
 
     data['files'] = new_file_list
@@ -419,6 +420,11 @@ def run(
             str(tmp_document.get_main_folder()), '.',
             "Add document '{0}'".format(papis.document.describe(tmp_document)))
 
+    # only remove original files at the end after everything has succeeded
+    if move:
+        for in_file_path in in_documents_paths:
+            os.remove(in_file_path)
+
 
 @click.command(
     "add",
@@ -473,6 +479,11 @@ def run(
     help="Instead of copying the file to the library, create a link to"
          "its original location",
     default=False)
+@click.option(
+    "--move/--no-move",
+    help="Instead of copying the file to the library, move it to "
+        "its destination",
+    default=lambda: True if papis.config.get('add-move') else False)
 @papis.cli.git_option(help="Git add and commit the new document")
 @click.option(
     "--list-importers", "--li", "list_importers",
@@ -492,6 +503,7 @@ def cli(
         edit: bool,
         git: bool,
         link: bool,
+        move: bool,
         list_importers: bool) -> None:
 
     if list_importers:
@@ -586,4 +598,5 @@ def cli(
         open_file=open_file,
         edit=edit,
         git=git,
-        link=link)
+        link=link,
+        move=move)
