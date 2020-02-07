@@ -482,9 +482,9 @@ def run(paths: List[str],
     default=lambda: True if papis.config.get('add-edit') else False)
 @click.option(
     "--link/--no-link",
-    help="Instead of copying the file to the library, create a link to"
+    help="Instead of copying the file to the library, create a link to "
          "its original location",
-    default=False)
+    default=lambda: True if papis.config.get('add-link') else False)
 @click.option(
     "--move/--no-move",
     help="Instead of copying the file to the library, move it to "

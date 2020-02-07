@@ -293,6 +293,12 @@ Bibtex options
     will have the contrary effect, i.e., it will not open the attached files
     before adding the document to the library.
 
+.. papis-config:: add-link
+
+    If set to ``True``, every time you run ``papis add``, the flag
+    ``--link`` will be added automatically, similarly to the
+    ``add-open`` option.
+
 .. papis-config:: add-move
 
     If set to ``True``, every time you run ``papis add``, the flag
