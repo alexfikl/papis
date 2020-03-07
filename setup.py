@@ -121,6 +121,7 @@ setup(
     ],
     package_data=dict(
         papis=[
+            "py.typed"
         ],
     ),
     data_files=data_files,
