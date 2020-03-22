@@ -249,6 +249,59 @@ def get_hash_folder(data: Dict[str, Any], document_paths: List[str]) -> str:
     return result
 
 
+def get_folder_path(
+        data: Dict[str, Any],
+        subfolder: Optional[str],
+        folder_name: Optional[str]) -> str:
+    """Generate folder name for the document.
+
+    :param data: data parsed for the document.
+    :param subfolder: folder within the library where to store the document.
+    :param folder_name: name or format of the folder where to store the
+        document.
+
+    :returns: an absolute path to the folder.
+    """
+    # get base folder name
+    if not folder_name:
+        basename = get_hash_folder(data, data["files"])
+        logger.info("Got an automatic folder name")
+    else:
+        temp_doc = papis.document.Document(data=data)
+        basename = papis.document.format_doc(folder_name, temp_doc)
+        basename = papis.utils.clean_document_name(basename)
+
+    basename_limit = 150
+    if len(basename) > basename_limit:
+        logger.warning("Shortening the name %s for portability", basename)
+        basename = basename[:basename_limit]
+
+    # get library folder name
+    lib_dirs = papis.config.get_lib_dirs()
+    if len(lib_dirs) == 0:
+        raise RuntimeError("Library {} has no folders".format(
+            papis.config.get_lib_name()))
+
+    dirname = os.path.expanduser(
+        os.path.join(lib_dirs[0], subfolder or '')
+        )
+
+    # ensure the folder path is unique
+    folder_path_orig = os.path.join(dirname, basename)
+    folder_path = folder_path_orig
+
+    g = papis.utils.create_identifier(ascii_lowercase)
+    while os.path.exists(folder_path):
+        string_append = next(g)
+        folder_path = "{}-{}".format(folder_path_orig, string_append)
+
+    logger.info("The folder name is {0}".format(basename))
+    logger.debug("Folder path: {0}".format(folder_path))
+    logger.debug("File(s): {0}".format(data["files"]))
+
+    return folder_path
+
+
 def run(
         paths: List[str],
         data: Dict[str, Any] = dict(),
@@ -288,8 +341,6 @@ def run(
     """
 
     logger = logging.getLogger('add:run')
-    # The folder name of the new document that will be created
-    out_folder_name = None
     # The real paths of the documents to be added
     in_documents_paths = paths
     # The basenames of the documents to be added
@@ -308,25 +359,8 @@ def run(
 
     tmp_document = papis.document.Document(temp_dir)
 
-    if not folder_name:
-        out_folder_name = get_hash_folder(data, in_documents_paths)
-        logger.info("Got an automatic folder name")
-    else:
-        temp_doc = papis.document.Document(data=data)
-        out_folder_name = papis.document.format_doc(folder_name, temp_doc)
-        out_folder_name = papis.utils.clean_document_name(out_folder_name)
-        del temp_doc
-
-    data["files"] = in_documents_names
-    out_folder_path = os.path.expanduser(
-        os.path.join(
-            papis.config.get_lib_dirs()[0],
-            subfolder or '',
-            out_folder_name))
-
-    logger.info("The folder name is {0}".format(out_folder_name))
-    logger.debug("Folder path: {0}".format(out_folder_path))
-    logger.debug("File(s): {0}".format(in_documents_paths))
+    data["files"] = in_documents_paths
+    out_folder_path = get_folder_path(data, subfolder, folder_name)
 
     # First prepare everything in the temporary directory
     g = papis.utils.create_identifier(ascii_lowercase)
