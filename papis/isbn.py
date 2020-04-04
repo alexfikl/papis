@@ -11,7 +11,7 @@ logger = logging.getLogger('papis:isbnlib')
 
 def get_data(
         query: str = "",
-        service: Optional[str] = None) -> List[Dict[str, Any]]:
+        service: str = "default") -> List[Dict[str, Any]]:
     global logger
     results = []  # type: List[Dict[str, Any]]
     logger.debug('Trying to retrieve isbn')
@@ -83,8 +83,8 @@ class Importer(papis.importer.Importer):
 @click.option(
     '--service',
     '-s',
-    default='goob',
-    type=click.Choice(['wcat', 'goob', 'openl'])
+    default='default',
+    type=click.Choice(['default', 'goob', 'openl'])
 )
 def explorer(ctx: click.core.Context, query: str, service: str) -> None:
     """
