@@ -70,8 +70,10 @@ class Importer(papis.importer.Importer):
     def fetch(self: papis.importer.Importer) -> Any:
         try:
             data = get_data(self.uri)[0]
-        except isbnlib.dev._exceptions.NoDataForSelectorError:
-            pass
+        except isbnlib.dev._exceptions.NoDataForSelectorError as e:
+            logger.error(e)
+        except isbnlib.dev._exceptions.DataNotFoundAtServiceError as e:
+            logger.error(e)
         else:
             self.ctx.data = data
 
