@@ -5,7 +5,7 @@ import isbnlib
 import isbnlib.registry
 import click
 # See https://github.com/xlcnd/isbnlib for details
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger('papis:isbnlib')
 
