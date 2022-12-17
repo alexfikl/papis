@@ -115,19 +115,19 @@ key_conversion = [
     }]),
     KeyConversionPair("link", [{
         "key": str(papis.config.get("doc-url-key-name")),
-        "action": lambda x: x[1]["URL"]
+        "action": lambda x: x[-1]["URL"]
     }]),
     KeyConversionPair("issued", [
-        {"key": "year", "action": lambda x: x.get("date-parts")[0][0]},
-        {"key": "month", "action": lambda x: x.get("date-parts")[0][1]}
+        {"key": "year", "action": lambda x: _convert_date_parts(x, 0)},
+        {"key": "month", "action": lambda x: _convert_date_parts(x, 1)}
     ]),
     KeyConversionPair("published-online", [
-        {"key": "year", "action": lambda x: x.get("date-parts")[0][0]},
-        {"key": "month", "action": lambda x: x.get("date-parts")[0][1]}
+        {"key": "year", "action": lambda x: _convert_date_parts(x, 0)},
+        {"key": "month", "action": lambda x: _convert_date_parts(x, 1)}
     ]),
     KeyConversionPair("published-print", [
-        {"key": "year", "action": lambda x: x.get("date-parts")[0][0]},
-        {"key": "month", "action": lambda x: x.get("date-parts")[0][1]}
+        {"key": "year", "action": lambda x: _convert_date_parts(x, 0)},
+        {"key": "month", "action": lambda x: _convert_date_parts(x, 1)}
     ]),
     KeyConversionPair("publisher", [papis.document.EmptyKeyConversion]),
     KeyConversionPair("reference", [{
@@ -146,10 +146,41 @@ key_conversion = [
     KeyConversionPair("event", [  # Conferences
         {"key": "venue", "action": lambda x: x["location"]},
         {"key": "booktitle", "action": lambda x: x["name"]},
-        {"key": "year", "action": lambda x: x["start"]["date-parts"][0][0]},
-        {"key": "month", "action": lambda x: x["start"]["date-parts"][0][1]},
+        {"key": "year", "action": lambda x: _convert_date_parts(x["start"], 0)},
+        {"key": "month", "action": lambda x: _convert_date_parts(x["start"], 1)},
     ]),
 ]  # List[papis.document.KeyConversionPair]
+
+
+def _convert_doc_url(entry: Any) -> Optional[str]:
+    # NOTE: this should always be a Resource Link as documented
+    # https://github.com/CrossRef/rest-api-doc/blob/master/api_format.md#resource-link
+    result = None
+    for x in entry:
+        if x["intended-application"] == "similarity-checking":
+            result = x["URL"]
+            break
+
+    return result
+
+
+def _convert_date_parts(entry: Any, ipart: int) -> Optional[int]:
+    parts = entry.get("date-parts")
+
+    result = None
+    if parts is None:
+        return result
+
+    assert len(parts) == 1
+
+    # NOTE: this supports both date and partial-date
+    #   https://github.com/CrossRef/rest-api-doc/blob/master/api_format.md#date
+    #   https://github.com/CrossRef/rest-api-doc/blob/master/api_format.md#partial-date
+
+    if 0 <= ipart < len(parts[0]):
+        result = int(parts[0][ipart])
+
+    return result
 
 
 def crossref_data_to_papis_data(data: Dict[str, Any]) -> Dict[str, Any]:
