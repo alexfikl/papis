@@ -248,7 +248,103 @@ def bibtex_type_check(doc: papis.document.Document) -> List[Error]:
     return []
 
 
-KEY_TYPE_CHECK_NAME = "key-type-check"
+BIBLATEX_TYPE_ALIAS_CHECK_NAME = "biblatex-type-alias"
+
+
+def biblatex_type_alias_check(doc: papis.document.Document) -> List[Error]:
+    import papis.bibtex
+    folder = doc.get_main_folder() or ""
+
+    def make_fixer(value: str) -> FixFn:
+        def fixer() -> None:
+            with papis.database.context(doc):
+                logger.info("[FIX] Setting 'type' to '%s'", value)
+                doc["type"] = value
+
+        return fixer
+
+    bib_type = doc.get("type")
+    bib_type_base = papis.bibtex.bibtex_type_aliases.get(bib_type)
+    if bib_type is not None and bib_type_base is not None:
+        return [Error(name=BIBLATEX_TYPE_ALIAS_CHECK_NAME,
+                      path=folder,
+                      msg=("Document type '{}' is an alias for '{}' in BibLaTeX."
+                           .format(bib_type, bib_type_base)),
+                      suggestion_cmd="papis edit --doc-folder {}".format(folder),
+                      fix_action=make_fixer(bib_type_base),
+                      payload=bib_type,
+                      doc=doc)]
+
+    return []
+
+
+BIBLATEX_KEY_ALIAS_CHECK_NAME = "biblatex-key-alias"
+
+
+def biblatex_key_alias_check(doc: papis.document.Document) -> List[Error]:
+    import papis.bibtex
+    folder = doc.get_main_folder() or ""
+
+    def make_fixer(key: str) -> FixFn:
+        def fixer() -> None:
+            with papis.database.context(doc):
+                new_key = papis.bibtex.bibtex_key_aliases[key]
+                logger.info("[FIX] Renaming key '%s' to '%s'", key, new_key)
+                doc[new_key] = doc[key]
+                del doc[key]
+
+        return fixer
+
+    # NOTE: `journal` is a key that papis relies on and we do not want to rename it
+    aliases = papis.bibtex.bibtex_key_aliases.copy()
+    del aliases["journal"]
+
+    return [Error(name=BIBLATEX_KEY_ALIAS_CHECK_NAME,
+                  path=folder,
+                  msg=("Document key '{}' is an alias for '{}' in BibLaTeX."
+                       .format(key, aliases[key])),
+                  suggestion_cmd="papis edit --doc-folder {}".format(folder),
+                  fix_action=make_fixer(key),
+                  payload=key,
+                  doc=doc)
+            for key in doc if key in aliases]
+
+
+BIBLATEX_REQUIRED_KEYS_CHECK_NAME = "biblatex-required-keys"
+
+
+def biblatex_required_keys_check(doc: papis.document.Document) -> List[Error]:
+    import papis.bibtex
+    folder = doc.get_main_folder() or ""
+
+    errors = bibtex_type_check(doc)
+    if errors:
+        return errors
+
+    # translate bibtex type
+    bib_type = doc["type"]
+    bib_type = papis.bibtex.bibtex_type_aliases.get(bib_type, bib_type)
+
+    if bib_type not in papis.bibtex.bibtex_type_required_keys:
+        bib_type = papis.bibtex.bibtex_type_required_keys_aliases.get(bib_type, "empty")
+
+    required_keys = papis.bibtex.bibtex_type_required_keys[bib_type]
+    aliases = {v: k for k, v in papis.bibtex.bibtex_key_aliases.items()}
+
+    return [Error(name=BIBLATEX_REQUIRED_KEYS_CHECK_NAME,
+                  path=folder,
+                  msg=("Document of type '{}' requires one of the keys '{}' "
+                       "to be compatible with BibLaTeX."
+                       .format(bib_type, "', '".join(keys))),
+                  suggestion_cmd="papis edit --doc-folder {}".format(folder),
+                  fix_action=lambda: None,
+                  payload=",".join(keys),
+                  doc=doc)
+            for keys in required_keys
+            if not any(key in doc or aliases.get(key) in doc for key in keys)]
+
+
+KEY_TYPE_CHECK_NAME = "key-type"
 
 
 def key_type_check(doc: papis.document.Document) -> List[Error]:
@@ -342,6 +438,9 @@ register_check(FILES_CHECK_NAME, files_check)
 register_check(KEYS_EXIST_CHECK_NAME, keys_check)
 register_check(DUPLICATED_KEYS_NAME, duplicated_keys_check)
 register_check(BIBTEX_TYPE_CHECK_NAME, bibtex_type_check)
+register_check(BIBLATEX_TYPE_ALIAS_CHECK_NAME, biblatex_type_alias_check)
+register_check(BIBLATEX_KEY_ALIAS_CHECK_NAME, biblatex_key_alias_check)
+register_check(BIBLATEX_REQUIRED_KEYS_CHECK_NAME, biblatex_required_keys_check)
 register_check(REFS_CHECK_NAME, refs_check)
 register_check(HTML_CODES_CHECK_NAME, html_codes_check)
 register_check(KEY_TYPE_CHECK_NAME, key_type_check)
