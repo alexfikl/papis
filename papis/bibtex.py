@@ -146,6 +146,49 @@ bibtex_key_converter = {
     "proceedingsTitle": "booktitle"
 }  # type: Dict[str, str]
 
+bibtex_type_required_keys = {
+    "empty": (),
+    # regular types (Section 2.1.1)
+    "article": (
+        ("author",), ("title",), ("journaltitle", "eprinttype"), ("year", "date")),
+    "book": (("author",), ("title",), ("year", "date")),
+    "inbook": (("author",), ("title",), ("booktitle",), ("year", "date")),
+    "booklet": (("author", "editor"), "title", ("year", "date")),
+    "collection": (("editor",), ("title",), ("year", "date")),
+    "incollection": (
+        ("author",), ("title",), ("editor",), ("booktitle",), ("year", "date")),
+    "dataset": (("author", "editor"), ("title",), ("year", "date")),
+    "manual": (("author", "editor"), ("title",), ("year", "date")),
+    "misc": (("author", "editor"), ("title",), ("year", "date")),
+    "online": (
+        ("author", "editor"), ("title",), ("year", "date"), ("doi", "eprint", "url")),
+    "patent": (("author",), ("title",), ("number",), ("year", "date")),
+    "periodical": (("editor",), ("title",), ("year", "date")),
+    "report": (("author",), ("title",), ("institution",), ("year", "date")),
+    # "set": (),
+    "thesis": (("author",), ("title",), ("type",), ("institution",), ("year", "date")),
+    "unpublished": (("author",), ("title",), ("year", "date")),
+    # field aliases (Section 2.1.2)
+    # NOTE: use the `bibtex_type_aliases` dict to replace before looking here
+    # non-standard type (Section 2.1.3)
+    # NOTE: these have no required keys
+}
+
+bibtex_type_required_keys_aliases = {
+    "mvbook": "book",
+    "bookinbook": "inbook",
+    "suppbook": "book",
+    "mvcollection": "collection",
+    "suppcollection": "collection",
+    "suppperiodical": "periodical",
+    "proceedings": "collection",
+    "mvproceedings": "collection",
+    "inproceedings": "incollection",
+    "reference": "collection",
+    "mvreference": "collection",
+    "inreference": "incollection",
+}
+
 bibtex_ignore_keys = (
     frozenset(papis.config.getlist("bibtex-ignore-keys"))
 )  # type: FrozenSet[str]
