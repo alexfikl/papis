@@ -8,45 +8,53 @@ can add yourself through the python configuration file.
 
 import os
 import re
-import json
-from typing import Optional, List, NamedTuple, Callable, Dict
 import collections
-import html
+from typing import Any, Optional, List, NamedTuple, Callable, Dict, Set
 
 import click
 
 import papis
-import papis.utils
-import papis.config
 import papis.cli
-import papis.pick
-import papis.database
+import papis.config
 import papis.strings
+import papis.database
 import papis.document
 import papis.logging
-from papis.commands.edit import run as edit_run
 
 logger = papis.logging.get_logger(__name__)
 
+# FIXME: when going to python >=3.6, these should be classes (dataclasses?) and
+# have some basic documentation for the various fields
+FixFn = Callable[[], None]
 Error = NamedTuple("Error", [("name", str),
                              ("path", str),
                              ("payload", str),
                              ("msg", str),
                              ("suggestion_cmd", str),
-                             ("fix_action", Callable[[], None]),
+                             ("fix_action", FixFn),
                              ("doc", Optional[papis.document.Document]),
                              ])
 CheckFn = Callable[[papis.document.Document], List[Error]]
 Check = NamedTuple("Check", [("name", str),
                              ("operate", CheckFn),
                              ])
+REGISTERED_CHECKS = {}  # type: Dict[str, Check]
+
+
+def error_to_dict(e: Error) -> Dict[str, Any]:
+    return {
+        "msg": e.payload,
+        "path": e.path,
+        "name": e.name,
+        "suggestion": e.suggestion_cmd}
 
 
 def register_check(name: str, check_function: CheckFn) -> None:
     """
     Register a check.
-    To be used by users in their configuration files
-    for example.
+
+    Registered checks are recognized by ``papis`` and can be used by users
+    in their configuration files, for example.
     """
     REGISTERED_CHECKS[name] = Check(name=name, operate=check_function)
 
@@ -60,42 +68,38 @@ FILES_CHECK_NAME = "files"
 
 def files_check(doc: papis.document.Document) -> List[Error]:
     """
-    It checks whether the files of a document actually exist in the
-    filesystem.
+    Check whether the files of a document actually exist in the filesystem.
+
+    :returns: a :class:`list` of errors, one for each file that does not exist.
     """
     files = doc.get_files()
-    results = []  # type: List[Error]
-    folder = doc.get_main_folder()
+    folder = doc.get_main_folder() or ""
 
-    def _fix(_file: str) -> Callable[[], None]:
-        """
-        Files fixer function, it will remove the bad file.
-        Notice that for now it only works if the file name is not of
-        the form 'subdirectory/file' but only 'file'.
-        """
+    def make_fixer(filename: str) -> FixFn:
+        def fixer() -> None:
+            """
+            Files fixer function that removes non-existent files from the document.
 
-        def __fix() -> None:
-            _db = papis.database.get()
-            basename = os.path.basename(_file)
-            if basename in doc["files"]:
-                doc["files"].remove(basename)
-            doc.save()
-            _db.update(doc)
+            For now it only works if the file name is not of the form
+            ``subdirectory/filename``, but only ``filename``.
+            """
 
-        return __fix
+            with papis.database.context(doc):
+                basename = os.path.basename(filename)
+                if basename in doc["files"]:
+                    logger.info("[FIX] Removing file from document: '%s'", basename)
+                    doc["files"].remove(basename)
 
-    for _f in files:
-        if not os.path.exists(_f):
-            results.append(Error(name=FILES_CHECK_NAME,
-                                 path=folder or "",
-                                 msg=("File '{}' declared but does not exist"
-                                      .format(_f)),
-                                 suggestion_cmd=("papis edit --doc-folder {}"
-                                                 .format(folder)),
-                                 fix_action=_fix(_f),
-                                 payload=_f,
-                                 doc=doc))
-    return results
+        return fixer
+
+    return [Error(name=FILES_CHECK_NAME,
+                  path=folder,
+                  msg="File '{}' declared but does not exist".format(f),
+                  suggestion_cmd="papis edit --doc-folder {}".format(folder),
+                  fix_action=make_fixer(f),
+                  payload=f,
+                  doc=doc)
+            for f in files if os.path.exists(f)]
 
 
 KEYS_EXIST_CHECK_NAME = "keys-exist"
@@ -103,24 +107,22 @@ KEYS_EXIST_CHECK_NAME = "keys-exist"
 
 def keys_check(doc: papis.document.Document) -> List[Error]:
     """
-    It checks whether the keys provided in the configuration
-    option ``doctor-keys-check`` exit in the document.
+    Checks whether the keys provided in the configuration
+    option ``doctor-keys-check`` exit in the document and are non-empty.
+
+    :returns: a :class:`list` of errors, one for each key that does not exist.
     """
     keys = papis.config.getlist("doctor-keys-exist-keys")
-    folder = doc.get_main_folder()
-    results = []  # type: List[Error]
-    for k in keys:
-        if k not in doc or len(doc[k]) == 0:
-            results.append(Error(name=KEYS_EXIST_CHECK_NAME,
-                                 path=folder or "",
-                                 msg=("Key '{}' does not exist"
-                                      .format(k)),
-                                 suggestion_cmd=("papis edit --doc-folder {}"
-                                                 .format(folder)),
-                                 fix_action=lambda: None,
-                                 payload=k,
-                                 doc=doc))
-    return results
+    folder = doc.get_main_folder() or ""
+
+    return [Error(name=KEYS_EXIST_CHECK_NAME,
+                  path=folder,
+                  msg="Key '{}' does not exist.".format(k),
+                  suggestion_cmd="papis edit --doc-folder {}".format(folder),
+                  fix_action=lambda: None,
+                  payload=k,
+                  doc=doc)
+            for k in keys if k not in doc]
 
 
 REFS_CHECK_NAME = "refs"
@@ -128,71 +130,85 @@ REFS_CHECK_NAME = "refs"
 
 def refs_check(doc: papis.document.Document) -> List[Error]:
     """
-    It checks that a ref exists and if not it
-    tries to create one according to the ref-format configuration
-    if the user chooses to fix it.
+    Checks that a ref exists and if not it tries to create one according to
+    the ``ref-format`` configuration option, if the user chooses to fix it.
+
+    :returns: an error if the reference does not exist or contains invalid
+        characters (as required by BibTeX).
     """
-    folder = doc.get_main_folder()
+    folder = doc.get_main_folder() or ""
     bad_symbols = re.compile(r"[ ,{}\[\]@#`']")
 
-    def _fix() -> None:
+    def fixer() -> None:
         ref = papis.bibtex.create_reference(doc, force=True)
-        _db = papis.database.get()
-        logger.info("Setting ref '%s' in '%s'",
+        logger.info("[FIX] Setting ref '%s' in '%s'",
                     ref,
                     papis.document.describe(doc))
-        doc["ref"] = ref
-        doc.save()
-        _db.update(doc)
 
-    if not doc["ref"] or not str(doc["ref"]).strip():
+        with papis.database.context(doc):
+            doc["ref"] = ref
+
+    ref = doc.get("ref")
+    ref = str(ref).strip() if ref is not None else ref
+
+    if not ref:
         return [Error(name=REFS_CHECK_NAME,
-                      path=folder or "",
+                      path=folder,
                       msg="Reference missing.",
                       suggestion_cmd=("papis edit --doc-folder {}"
                                       .format(folder)),
-                      fix_action=_fix,
+                      fix_action=fixer,
                       payload="",
                       doc=doc)]
-    m = bad_symbols.findall(str(doc["ref"]))
+
+    m = bad_symbols.findall(ref)
     if m:
         return [Error(name=REFS_CHECK_NAME,
-                      path=folder or "",
-                      msg=("Bad characters ({}) found in reference."
-                           .format(set(m))),
-                      suggestion_cmd=("papis edit --doc-folder {}"
-                                      .format(folder)),
-                      fix_action=_fix,
+                      path=folder,
+                      msg="Bad characters ({}) found in reference.".format(set(m)),
+                      suggestion_cmd="papis edit --doc-folder {}".format(folder),
+                      fix_action=fixer,
                       payload="",
                       doc=doc)]
+
     return []
 
 
-DUPLICATED_KEYS_SEEN \
-    = collections.defaultdict(list)  # type: Dict[str, List[str]]
+DUPLICATED_KEYS_SEEN = collections.defaultdict(set)  # type: Dict[str, Set[str]]
 DUPLICATED_KEYS_NAME = "duplicated-keys"
 
 
 def duplicated_keys_check(doc: papis.document.Document) -> List[Error]:
     """
-    Check for duplicated keys in `doctor-duplicated-keys-check`
+    Check for duplicated keys in the list given by the
+    ``doctor-duplicated-keys-check`` configuration option.
+
+    :returns: a :class:`list` of errors, one for each key with a value that already
+        exist in the documents from the current query.
     """
     keys = papis.config.getlist("doctor-duplicated-keys-keys")
-    folder = doc.get_main_folder()
+    folder = doc.get_main_folder() or ""
+
     results = []  # type: List[Error]
     for key in keys:
-        if str(doc[key]) in DUPLICATED_KEYS_SEEN[key]:
-            results.append(Error(name=DUPLICATED_KEYS_NAME,
-                                 msg=("Key '{}' is duplicated ({})."
-                                      .format(key, doc[key])),
-                                 suggestion_cmd=("papis edit {}:'{}'"
-                                                 .format(key, doc[key])),
-                                 payload=key,
-                                 fix_action=lambda: None,
-                                 path=folder or "",
-                                 doc=doc))
-        else:
-            DUPLICATED_KEYS_SEEN[key].append(str(doc[key]))
+        value = doc.get(key)
+        if value is None:
+            continue
+
+        value = str(value)
+        seen = DUPLICATED_KEYS_SEEN[key]
+        if value not in seen:
+            seen.update(value)
+            continue
+
+        results.append(Error(name=DUPLICATED_KEYS_NAME,
+                             path=folder,
+                             msg="Key '{}' is duplicated ({}).".format(key, value),
+                             suggestion_cmd="papis edit {}:'{}'".format(key, value),
+                             fix_action=lambda: None,
+                             payload=key,
+                             doc=doc))
+
     return results
 
 
@@ -201,24 +217,35 @@ BIBTEX_TYPE_CHECK_NAME = "bibtex-type"
 
 def bibtex_type_check(doc: papis.document.Document) -> List[Error]:
     """
-    Check that the types are compatible with bibtex or biblatex
-    type descriptors.
+    Check that the document type is compatible with BibTeX or BibLaTeX type
+    descriptors.
+
+    :returns: an error if the types are not compatible.
     """
-    types = papis.bibtex.bibtex_types
-    folder = doc.get_main_folder()
-    results = []
-    if doc["type"] not in types:
-        results.append(Error(name=BIBTEX_TYPE_CHECK_NAME,
-                             path=folder or "",
-                             msg=("Document type '{}' is not"
-                                  " a valid bibtex type"
-                                  .format(doc["type"])),
-                             suggestion_cmd=("papis edit --doc-folder {}"
-                                             .format(folder)),
-                             fix_action=lambda: None,
-                             payload=doc["type"],
-                             doc=doc))
-    return results
+    import papis.bibtex
+    folder = doc.get_main_folder() or ""
+    bib_type = doc.get("type")
+
+    if bib_type is None:
+        return [Error(name=BIBTEX_TYPE_CHECK_NAME,
+                      path=folder,
+                      msg="Document does not define a type.",
+                      suggestion_cmd="papis edit --doc-folder {}".format(folder),
+                      fix_action=lambda: None,
+                      payload="type",
+                      doc=doc)]
+
+    if bib_type not in papis.bibtex.bibtex_types:
+        return [Error(name=BIBTEX_TYPE_CHECK_NAME,
+                      path=folder,
+                      msg=("Document type '{}' is not a valid BibTeX type."
+                           .format(bib_type)),
+                      suggestion_cmd="papis edit --doc-folder {}".format(folder),
+                      fix_action=lambda: None,
+                      payload=bib_type,
+                      doc=doc)]
+
+    return []
 
 
 KEY_TYPE_CHECK_NAME = "key-type-check"
@@ -226,21 +253,38 @@ KEY_TYPE_CHECK_NAME = "key-type-check"
 
 def key_type_check(doc: papis.document.Document) -> List[Error]:
     """
-    Check the type of some keys.
+    Check document keys have expected types.
+
+    The ``doctor-key-type-check-keys`` configuration entry defines a mapping
+    of keys and their expected types.
+
+    :returns: a :class:`list` of errors, one for each key does not have the
+        expected type (if it exists).
     """
+    folder = doc.get_main_folder() or ""
+
     results = []
-    folder = doc.get_main_folder()
-    keys = [eval(tup) for tup in
-            papis.config.getlist("doctor-key-type-check-keys")]
-    for key, typstr in keys:
-        typ = eval(typstr)
-        if doc.has(key) and not isinstance(doc[key], typ):
+    for value in papis.config.getlist("doctor-key-type-check-keys"):
+        try:
+            key, cls_name = eval(value)
+        except SyntaxError:
+            logger.error("Invalid (key, type) pair: '%s'", value)
+            continue
+
+        try:
+            cls = eval(cls_name)
+        except NameError:
+            logger.error("Invalid type for key '%s': '%s'", key, cls_name)
+            continue
+
+        doc_value = doc.get(key)
+        if doc_value is not None and not isinstance(doc_value, cls):
             results.append(Error(name=KEY_TYPE_CHECK_NAME,
-                                 path=folder or "",
-                                 msg=("Key '{}'({}) should be of type '{}'"
+                                 path=folder,
+                                 msg=("Key '{}' ({}) should be of type '{}'"
                                       " but found '{}'"
-                                      .format(key, doc[key],
-                                              typ, type(doc[key]))),
+                                      .format(key, doc_value,
+                                              cls, type(doc_value).__name__)),
                                  suggestion_cmd=("papis edit --doc-folder {}"
                                                  .format(folder)),
                                  fix_action=lambda: None,
@@ -255,42 +299,45 @@ HTML_CODES_CHECK_NAME = "html-codes"
 
 def html_codes_check(doc: papis.document.Document) -> List[Error]:
     """
-    Checks that the keys in "doctor-html-code-keys" do not contain
-    any html codes like &amp; etc.
+    Checks that the keys in ``doctor-html-code-keys`` configuratio options do
+    not contain any HTML codes like ``&amp;`` etc.
+
+    :returns: a :class:`list` of errors, one for each key that contains HTML codes.
     """
     results = []
-    folder = doc.get_main_folder()
+    folder = doc.get_main_folder() or ""
 
-    def _fix(key: str) -> Callable[[], None]:
+    def make_fixer(key: str) -> FixFn:
+        def fixer() -> None:
+            import html
 
-        def __fix() -> None:
-            db = papis.database.get()
-            val = html.unescape(doc[key])
-            logger.info("Setting '%s' to '%s'", key, val)
-            doc[key] = val
-            doc.save()
-            db.update(doc)
+            with papis.database.context(doc):
+                val = html.unescape(doc[key])
+                doc[key] = val
+                logger.info("[FIX] Setting '%s' to '%s'", key, val)
 
-        return __fix
+        return fixer
 
     for key in papis.config.getlist("doctor-html-codes-keys"):
-        if doc[key]:
-            m = HTML_CODE_REGEX.findall(str(doc[key]))
-            if m:
-                results.append(Error(name=HTML_CODES_CHECK_NAME,
-                                     path=folder or "",
-                                     msg=("Field '{}' contains html codes {}"
-                                          .format(key, m)),
-                                     suggestion_cmd=("papis edit "
-                                                     "--doc-folder {}"
-                                                     .format(folder)),
-                                     fix_action=_fix(key),
-                                     payload=key,
-                                     doc=doc))
+        value = doc.get(key)
+        if value is None:
+            continue
+
+        m = HTML_CODE_REGEX.findall(str(value))
+        if m:
+            results.append(Error(name=HTML_CODES_CHECK_NAME,
+                                 path=folder,
+                                 msg=("Field '{}' contains HTML codes {}"
+                                      .format(key, m)),
+                                 suggestion_cmd=(
+                                     "papis edit --doc-folder {}".format(folder)),
+                                 fix_action=make_fixer(key),
+                                 payload=key,
+                                 doc=doc))
+
     return results
 
 
-REGISTERED_CHECKS = {}  # type: Dict[str, Check]
 register_check(FILES_CHECK_NAME, files_check)
 register_check(KEYS_EXIST_CHECK_NAME, keys_check)
 register_check(DUPLICATED_KEYS_NAME, duplicated_keys_check)
@@ -302,13 +349,17 @@ register_check(KEY_TYPE_CHECK_NAME, key_type_check)
 
 def run(doc: papis.document.Document, checks: List[str]) -> List[Error]:
     """
-    Runner for doctor. It runs all the checks given by the check
-    argument, and it gets the check from the global REGISTERED_CHECKS
-    dictionary.
+    Runner for ``papis doctor``.
+
+    It runs all the checks given by the *checks* argument that have been
+    registered through :func:`register_check`.
     """
+    assert all(check in REGISTERED_CHECKS for check in checks)
+
     results = []  # type: List[Error]
     for check in checks:
         results.extend(REGISTERED_CHECKS[check].operate(doc))
+
     return results
 
 
@@ -320,7 +371,7 @@ def run(doc: papis.document.Document, checks: List[str]) -> List[Error]:
               default=lambda: papis.config.getlist("doctor-default-checks"),
               multiple=True,
               type=click.Choice(registered_checks_names()),
-              help=("Checks to run on every document."))
+              help="Checks to run on every document.")
 @click.option("--json", "_json",
               default=False, is_flag=True,
               help="Output the results in json format")
@@ -351,11 +402,9 @@ def cli(query: str,
         suggest: bool) -> None:
     """Check for common problems in documents"""
 
-    documents = papis.cli.handle_doc_folder_query_all_sort(query,
-                                                           doc_folder,
-                                                           sort_field,
-                                                           sort_reverse,
-                                                           _all)
+    documents = papis.cli.handle_doc_folder_query_all_sort(
+        query, doc_folder, sort_field, sort_reverse, _all)
+
     if not documents:
         logger.warning(papis.strings.no_documents_retrieved_message)
         return
@@ -364,31 +413,33 @@ def cli(query: str,
 
     errors = []  # type: List[Error]
     for doc in documents:
-        errors += run(doc, _checks)
+        errors.extend(run(doc, _checks))
 
     if errors:
         logger.warning("%s errors found", len(errors))
+    else:
+        logger.info("No errors found!")
 
     if _json:
-        print(json.dumps(list(map(lambda e:
-                                  dict(msg=e.payload,
-                                       path=e.path,
-                                       name=e.name,
-                                       suggestion=e.suggestion_cmd),
-                                  errors))))
+        import json
+
+        print(json.dumps(list(map(error_to_dict, errors))))
         return
+
+    from papis.commands.edit import run as edit_run
 
     for error in errors:
         print("{e.name}\t{e.payload}\t{e.path}".format(e=error))
+
         if explain:
-            print("\tReason: {}"
-                  .format(error.msg))
+            print("\tReason: {}".format(error.msg))
+
         if suggest:
-            print("\tSuggestion: {}"
-                  .format(error.suggestion_cmd))
+            print("\tSuggestion: {}".format(error.suggestion_cmd))
+
         if fix:
-            logger.warning("Fixing...")
             error.fix_action()
+
         if edit and error.doc:
             input("Press any key to edit...")
             edit_run(error.doc)
