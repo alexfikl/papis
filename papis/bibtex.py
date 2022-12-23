@@ -16,7 +16,7 @@ logger = papis.logging.get_logger(__name__)
 # NOTE: see the BibLaTeX docs for an up to date list of types and keys:
 #   https://ctan.org/pkg/biblatex?lang=en
 
-bibtex_types = frozenset([
+bibtex_standard_types = frozenset([
     # regular types (Section 2.1.1)
     "article",
     "book", "mvbook", "inbook", "bookinbook", "suppbook", "booklet",
@@ -36,6 +36,19 @@ bibtex_types = frozenset([
     "unpublished",
     # "xdata",
     # "custom[a-f]",
+])
+
+bibtex_type_aliases = {
+    # type aliases (Section 2.1.2)
+    "conference": "inproceedings",
+    "electronic": "online",
+    "masterthesis": "thesis",
+    "phdthesis": "thesis",
+    "techreport": "report",
+    "www": "online",
+}
+
+bibtex_non_standard_types = frozenset([
     # non-standard types (Section 2.1.3)
     "artwork",
     "audio",
@@ -52,9 +65,11 @@ bibtex_types = frozenset([
     "review",
     "standard",
     "video",
-    # type aliases (Section 2.1.2)
-    "conference", "electronic", "masterthesis", "phdthesis", "techreport", "www",
-]) | frozenset(papis.config.getlist("extra-bibtex-types"))  # type: FrozenSet[str]
+])
+
+bibtex_types = (
+    bibtex_standard_types | frozenset(bibtex_type_aliases) | bibtex_non_standard_types
+    | frozenset(papis.config.getlist("extra-bibtex-types")))
 
 # Zotero translator fields, see also
 #   https://github.com/zotero/zotero-schema
@@ -65,7 +80,7 @@ bibtex_type_converter = {
     "journal": "article",
 }  # type: Dict[str, str]
 
-bibtex_keys = frozenset([
+bibtex_standard_keys = frozenset([
     # data fields (Section 2.2.2)
     "abstract", "addendum", "afterword", "annotation", "annotator", "author",
     "authortype", "bookauthor", "bookpagination", "booksubtitle", "booktitle",
@@ -85,6 +100,23 @@ bibtex_keys = frozenset([
     "shortjournal", "shortseries", "shorttitle", "subtitle", "title",
     "titleaddon", "translator", "url", "urldate", "venue", "version",
     "volume", "volumes", "year",
+    # fields that we ignore
+    # type,
+])
+
+bibtex_key_aliases = {
+    # field aliases (Section 2.2.5)
+    "address": "location",
+    "annote": "annotation",
+    "archiveprefix": "eprinttype",
+    "journal": "journaltitle",
+    "key": "sortkey",
+    "pdf": "file",
+    "primaryclass": "eprintclass",
+    "school": "institution",
+}
+
+bibtex_special_keys = frozenset([
     # special fields (Section 2.2.3)
     "crossref", "entryset", "execute", "gender", "langid", "langidopts",
     "ids", "indexsorttitle", "keywords", "options", "presort", "related",
@@ -96,12 +128,11 @@ bibtex_keys = frozenset([
     # list[a-f]
     # user[a-f]
     # verb[a-c]
-    # field aliases (Section 2.2.5)
-    "address", "annote", "archiveprefix", "journal", "key", "pdf",
-    "primaryclass", "school"
-    # fields that we ignore
-    # type,
-]) | frozenset(papis.config.getlist("extra-bibtex-keys"))  # type: FrozenSet[str]
+])
+
+bibtex_keys = (
+    bibtex_standard_keys | frozenset(bibtex_key_aliases) | bibtex_special_keys
+    | frozenset(papis.config.getlist("extra-bibtex-keys")))
 
 # Zotero translator fields, see also
 #   https://github.com/zotero/zotero-schema
