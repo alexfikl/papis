@@ -1,3 +1,10 @@
+# VERSION TBD (TBD)
+
+## Dependency Changes
+
+* Added an explicit dependency on [typing_extensions](https://typing-extensions.readthedocs.io)
+  to use the `warnings.deprecated` backport.
+
 # VERSION 0.16.0 (August 18th, 2026)
 
 ## Dependency Changes
