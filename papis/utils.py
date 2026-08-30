@@ -230,7 +230,7 @@ def general_open(file_name: str,
             f"Command not found for '{key}': '{opener}'")
 
     try:
-        run(cmd, wait=wait)  # type: ignore[call-overload]
+        run(cmd, wait=wait)
     except subprocess.CalledProcessError as exc:
         logger.warning(
             "Opener for '%s' exited with code %d.",
