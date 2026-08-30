@@ -11,9 +11,9 @@ logger = papis.logging.get_logger(__name__)
 
 
 def _to_bibtexparser_v1(entry: dict[str, Any], *, indent: int) -> str:
-    from bibtexparser import dumps
-    from bibtexparser.bibdatabase import BibDatabase
-    from bibtexparser.bwriter import BibTexWriter
+    from bibtexparser import dumps  # ty: ignore[unresolved-import]
+    from bibtexparser.bibdatabase import BibDatabase  # ty: ignore[unresolved-import]
+    from bibtexparser.bwriter import BibTexWriter  # ty: ignore[unresolved-import]
 
     db = BibDatabase()
     db.entries = [entry]

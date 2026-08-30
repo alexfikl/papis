@@ -10,7 +10,7 @@ import pathlib
 
 
 def unwrap_markdown(text: str) -> str:
-    from markdown_it import MarkdownIt
+    from markdown_it import MarkdownIt  # ty: ignore[unresolved-import]
 
     md = MarkdownIt("commonmark")
 
