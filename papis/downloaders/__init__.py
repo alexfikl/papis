@@ -109,7 +109,7 @@ class Downloader(Importer):
         self.session.close()
 
     @classmethod
-    def match(cls, url: str) -> Downloader | None:
+    def match(cls, url: str) -> Downloader | None:  # ty: ignore[invalid-method-override]
         """Check if the downloader can process the given URL.
 
         For example, an importer that supports links from the arXiv can check
