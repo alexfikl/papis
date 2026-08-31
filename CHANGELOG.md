@@ -1,3 +1,9 @@
+# VERSION TBD (TBD)
+
+## Dependency Changes
+
+* Switch from `mypy` to [`ty`](https://github.com/astral-sh/ty) for type checking.
+
 # VERSION 0.16.0 (August 18th, 2026)
 
 ## Dependency Changes
