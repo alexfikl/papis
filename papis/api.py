@@ -142,6 +142,9 @@ def edit_file(file_path: str, wait: bool = True) -> None:
     :param file_path: a path to a file.
     :param wait: if *True*, wait for the completion of the editor before
         continuing execution (blocking behavior).
+
+    :raises subprocess.CalledProcessError: if the editor exits with a non-zero
+        exit code (only possible when *wait* is *True*).
     """
 
     from papis.utils import general_open
