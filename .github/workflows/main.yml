@@ -113,6 +113,7 @@ jobs:
         # NOTE: need to make the wheels first so that the sdist doesn't add the
         # extra generated `CHANGELOG-LATEST.md` file.
         bash tools/make-wheels.sh
+        python -m pip install markdown-it-py
         python tools/extract-changelog.py CHANGELOG.md -o CHANGELOG-LATEST.md
 
     - if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')

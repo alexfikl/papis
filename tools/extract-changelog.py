@@ -1,6 +1,39 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "markdown-it-py>=3.0",
+# ]
+# ///
 from __future__ import annotations
 
 import pathlib
+
+
+def unwrap_markdown(text: str) -> str:
+    from markdown_it import MarkdownIt  # type: ignore[import-not-found]
+
+    md = MarkdownIt("commonmark")
+
+    # NOTE: `inline` tokens cover the source lines of a single paragraph or
+    # list item, so consecutive lines within a token are soft-wrapped
+    joins: set[int] = set()
+    for token in md.parse(text):
+        if token.type == "inline" and token.map is not None:
+            start, end = token.map
+            joins.update(range(start, end - 1))
+
+    lines = text.split("\n")
+    result: list[str] = []
+    i = 0
+    while i < len(lines):
+        current = lines[i].rstrip()
+        while i in joins:
+            i += 1
+            current = f"{current} {lines[i].strip()}"
+        result.append(current)
+        i += 1
+
+    return "\n".join(result)
 
 
 def main(filename: pathlib.Path, *, outfile: pathlib.Path | None = None) -> int:
@@ -20,6 +53,7 @@ def main(filename: pathlib.Path, *, outfile: pathlib.Path | None = None) -> int:
     latest = "\n".join(
         line.replace("##", "#") for line in result[0].strip().split("\n")[2:]
     )
+    latest = unwrap_markdown(latest)
 
     if outfile is not None:
         with open(outfile, "w", encoding="utf-8") as outf:
